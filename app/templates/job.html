@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block head %}{% if job.status in ("queued", "processing") %}<meta http-equiv="refresh" content="3">{% endif %}{% endblock %}
+{% block head %}{% if job.status in ("queued", "processing") %}<meta http-equiv="refresh" content="3">{% elif analyzing %}<meta http-equiv="refresh" content="2">{% endif %}{% endblock %}
 {% block title %}任务 {{ job.id }} · 双端 FASTQ 配对修复{% endblock %}
 {% block content %}
 <div class="card">
@@ -33,6 +33,104 @@
     </div>
     {% endfor %}
   </div>
+</div>
+
+<div class="card" id="fragments">
+  <h2>片段长度分析</h2>
+  <p class="muted">
+    数据源：已发布的
+    <span class="mono">{{ fragment_inputs.r1 }}</span> /
+    <span class="mono">{{ fragment_inputs.r2 }}</span>。
+    逐对校验同位 ID、四行记录与 Phred+33 质量字符；R2 反向互补后寻找
+    R1 后缀与 R2 前缀 ≥ 12 bp 的重叠（最多 2 个错配，每个错配至少一端质量 &lt; 20，
+    含 N 不成立）。仅唯一合法重叠时按 len(R1)+len(R2)−重叠 估算，否则记未知；
+    读长超 300 bp 整次拒绝。
+  </p>
+  <form method="post" action="{{ url_for('analyze_fragments', jid=job.id) }}" class="form-row">
+    <div class="field">
+      <label for="threshold">偏短阈值（bp）</label>
+      <input type="number" id="threshold" name="threshold" required
+             min="{{ min_threshold }}" max="{{ max_threshold }}" step="1"
+             value="{{ analysis_row.threshold if analysis_row and analysis_row.threshold is not none else default_threshold }}">
+    </div>
+    <div class="field">
+      <button class="btn btn-primary" type="submit"
+              {% if analyzing %}disabled{% endif %}>
+        {% if analyzing %}分析中…{% else %}开始分析{% endif %}
+      </button>
+    </div>
+  </form>
+
+  {% if analyzing %}
+  <p class="muted">分析进行中（页面每 2 秒自动刷新）。</p>
+  {% elif analysis_row and analysis_row.status == "failed" %}
+  <p class="err">分析未发布结论：{{ analysis_row.message }}</p>
+  {% endif %}
+
+  {% if fragment_result %}
+  {% if stale_reason %}
+  <p class="err">⚠ 该结论已过期：{{ stale_reason }}。请重新分析。</p>
+  {% endif %}
+  <dl class="kv">
+    <dt>分析阈值</dt>
+    <dd class="num" style="text-align:left">{{ fragment_result.threshold }} bp</dd>
+    <dt>读段对总数</dt><dd class="num" style="text-align:left">{{ fragment_result.total_pairs }}</dd>
+    <dt>可估算长度</dt>
+    <dd class="num" style="text-align:left">{{ fragment_result.known_pairs }}
+        （{{ fragment_result.known_pct }}%）</dd>
+    <dt>偏短（&lt; 阈值）</dt>
+    <dd class="num" style="text-align:left">{{ fragment_result.below_threshold_pairs }}
+        （{{ fragment_result.below_threshold_pct }}%）</dd>
+    <dt>未知</dt>
+    <dd class="num" style="text-align:left">{{ fragment_result.unknown_pairs }}
+        （{{ fragment_result.unknown_pct }}%）</dd>
+    <dt>可估算中偏短占比</dt>
+    <dd class="num" style="text-align:left">
+      {% if fragment_result.known_pairs %}
+      {{ (100.0 * fragment_result.below_threshold_pairs / fragment_result.known_pairs) | round(2) }}%
+      {% else %}—{% endif %}</dd>
+    <dt>长度范围</dt>
+    <dd class="num" style="text-align:left">
+      {% if fragment_result.min_length is not none %}
+      {{ fragment_result.min_length }}–{{ fragment_result.max_length }} bp，
+      均值 {{ fragment_result.mean_length }} bp
+      {% else %}—{% endif %}
+    </dd>
+  </dl>
+
+  <h3 class="h3">片段长度分布（{{ fragment_result.bin_width }} bp 分箱）</h3>
+  {% if fragment_result.distribution %}
+  {% set max_count = fragment_result.distribution | map(attribute='count') | max %}
+  <table class="hist">
+    <thead><tr><th>长度区间（bp）</th><th class="num">读段对</th><th>占比</th></tr></thead>
+    <tbody>
+      {% for b in fragment_result.distribution %}
+      <tr{% if b.end < fragment_result.threshold %} class="below"{% endif %}>
+        <td class="mono">{{ b.start }}–{{ b.end }}</td>
+        <td class="num">{{ b.count }}</td>
+        <td><div class="bar" style="width: {{ (100.0 * b.count / max_count) | round(1) }}%"></div></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="muted">低于阈值的区间以浅红底色标出（阈值落在某个分箱内部时该分箱不标红，
+     精确占比以上方统计为准）；占比条以最大分箱为 100%。</p>
+  {% else %}
+  <p class="muted">没有可估算长度的读段对。</p>
+  {% endif %}
+  {% if analysis_row and analysis_row.published_at %}
+  <p class="muted">分析依据：<span class="mono">{{ fragment_inputs.r1 }}</span> +
+     <span class="mono">{{ fragment_inputs.r2 }}</span> 的内容指纹
+     <span class="mono" title="{{ analysis_row.published_sha256 }}">
+       {{ analysis_row.published_sha256[:23] }}…</span>，
+     阈值 {{ analysis_row.published_threshold }} bp，发布于 {{ analysis_row.published_at }}。
+  </p>
+  {% endif %}
+  {% endif %}
+  {% if not fragment_result and analysis_row and analysis_row.published_at %}
+  <p class="muted">最近一次已发布结论（阈值 {{ analysis_row.published_threshold }} bp，
+     {{ analysis_row.published_at }}）的内容当前无法展示。</p>
+  {% endif %}
 </div>
 {% endif %}
 

@@ -7,6 +7,9 @@
   badqual_r1/r2.fastq.gz  R1 末尾记录序列/质量长度不符   -> 必须整批失败
   truncated_r1/r2.fastq.gz R1 末尾只有 3 行（记录残缺）  -> 必须整批失败
   notgzip_r1/r2.fastq.gz  内容不是 gzip                  -> 必须整批失败
+  frag_r1/r2.fastq.gz     片段长度分析样例（已配对、同位同序，读长 100 bp）：
+                          150 bp 与 180 bp 各 100 对，另有 4 对无重叠（未知）
+                          -> 阈值 180 bp 时 known=200, below=100, unknown=4
 
 用法: python3 make_samples.py [输出目录]   （默认写到脚本所在目录）
 """
@@ -104,6 +107,37 @@ def make_notgzip(out):
     write_gz(os.path.join(out, "notgzip_r2.fastq.gz"), "".join(r2))
 
 
+_COMP = str.maketrans("ACGT", "TGCA")
+
+
+def revcomp(seq):
+    return seq.translate(_COMP)[::-1]
+
+
+def frag_record(rid, side, frag, read_len, r):
+    """把片段切成 R1（前 read_len）与 R2（后 read_len 的反向互补）。"""
+    if side == 1:
+        return f"@FRAG:{rid}/{side}\n{frag[:read_len]}\n+\n{'I' * read_len}\n"
+    return (f"@FRAG:{rid}/{side}\n{revcomp(frag[-read_len:])}\n+\n"
+            f"{'I' * read_len}\n")
+
+
+def make_fragments(out):
+    recs_r1, recs_r2 = [], []
+    r = random.Random("fragments")
+    for i in range(200):
+        frag_len = 150 if i % 2 == 0 else 180
+        frag = "".join(r.choice("ACGT") for _ in range(frag_len))
+        recs_r1.append(frag_record(i, 1, frag, 100, rng))
+        recs_r2.append(frag_record(i, 2, frag, 100, rng))
+    # 4 对无重叠（R1 全 A、R2 全 C）：唯一无法确定 -> 未知
+    for i in range(200, 204):
+        recs_r1.append(f"@FRAG:{i}/1\n{'A' * 100}\n+\n{'I' * 100}\n")
+        recs_r2.append(f"@FRAG:{i}/2\n{'C' * 100}\n+\n{'I' * 100}\n")
+    write_gz(os.path.join(out, "frag_r1.fastq.gz"), "".join(recs_r1))
+    write_gz(os.path.join(out, "frag_r2.fastq.gz"), "".join(recs_r2))
+
+
 def main():
     out = sys.argv[1] if len(sys.argv) > 1 else os.path.dirname(os.path.abspath(__file__))
     os.makedirs(out, exist_ok=True)
@@ -112,9 +146,11 @@ def main():
     make_badqual(out)
     make_truncated(out)
     make_notgzip(out)
+    make_fragments(out)
     print(f"样例已生成到 {out}")
     print(f"  normal_*: paired={N_PAIRED} r1_only={N_R1_ONLY} r2_only={N_R2_ONLY}")
     print("  dup_* / badqual_* / truncated_* / notgzip_*: 预期整批失败")
+    print("  frag_*: 200 对可估算（150/180 bp 各 100 对）+ 4 对未知")
 
 
 if __name__ == "__main__":

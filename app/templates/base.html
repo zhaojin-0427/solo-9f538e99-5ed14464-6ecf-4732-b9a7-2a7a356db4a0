@@ -47,9 +47,16 @@
                gap: 10px; margin-top: 8px; }
     .dl-item { border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px; }
     .dl-item .name { font-size: 13px; margin-bottom: 8px; }
-    input[type=file] { font-size: 13px; }
+    input[type=file], input[type=number] { font-size: 13px; }
+    input[type=number] { width: 120px; padding: 6px 8px; border: 1px solid #cbd5e1;
+                         border-radius: 6px; }
     .form-row { display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-end; }
     .field label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+    .h3 { font-size: 14px; margin: 20px 0 10px; }
+    .hist td, .hist th { padding: 4px 10px; }
+    .hist tr.below td { background: #fef2f2; }
+    .bar { height: 10px; background: #16324f; border-radius: 2px; min-width: 1px; }
+    .hist tr.below .bar { background: var(--bad); }
   </style>
 </head>
 <body>
